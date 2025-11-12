@@ -22,6 +22,7 @@ import { LoggingContentGenerator } from './loggingContentGenerator.js';
 import { InstallationManager } from '../utils/installationManager.js';
 import { FakeContentGenerator } from './fakeContentGenerator.js';
 import { RecordingContentGenerator } from './recordingContentGenerator.js';
+import { OpenAIContentGenerator } from './openaiContentGenerator.js';
 
 /**
  * Interface abstracting the core functionalities for generating content and counting tokens.
@@ -49,6 +50,7 @@ export enum AuthType {
   USE_GEMINI = 'gemini-api-key',
   USE_VERTEX_AI = 'vertex-ai',
   CLOUD_SHELL = 'cloud-shell',
+  USE_OPENAI = 'openai-api-key',
 }
 
 export type ContentGeneratorConfig = {
@@ -56,6 +58,7 @@ export type ContentGeneratorConfig = {
   vertexai?: boolean;
   authType?: AuthType;
   proxy?: string;
+  openaiBaseURL?: string;
 };
 
 export async function createContentGeneratorConfig(
@@ -70,6 +73,8 @@ export async function createContentGeneratorConfig(
     process.env['GOOGLE_CLOUD_PROJECT_ID'] ||
     undefined;
   const googleCloudLocation = process.env['GOOGLE_CLOUD_LOCATION'] || undefined;
+  const openaiApiKey = process.env['OPENAI_API_KEY'] || undefined;
+  const openaiBaseURL = process.env['OPENAI_BASE_URL'] || undefined;
 
   const contentGeneratorConfig: ContentGeneratorConfig = {
     authType,
@@ -81,6 +86,12 @@ export async function createContentGeneratorConfig(
     authType === AuthType.LOGIN_WITH_GOOGLE ||
     authType === AuthType.CLOUD_SHELL
   ) {
+    return contentGeneratorConfig;
+  }
+
+  if (authType === AuthType.USE_OPENAI && openaiApiKey) {
+    contentGeneratorConfig.apiKey = openaiApiKey;
+    contentGeneratorConfig.openaiBaseURL = openaiBaseURL;
     return contentGeneratorConfig;
   }
 
@@ -132,6 +143,17 @@ export async function createContentGenerator(
         ),
         gcConfig,
       );
+    }
+
+    if (config.authType === AuthType.USE_OPENAI) {
+      if (!config.apiKey) {
+        throw new Error('OpenAI API key is required');
+      }
+      const openaiGenerator = new OpenAIContentGenerator({
+        apiKey: config.apiKey,
+        baseURL: config.openaiBaseURL,
+      });
+      return new LoggingContentGenerator(openaiGenerator, gcConfig);
     }
 
     if (

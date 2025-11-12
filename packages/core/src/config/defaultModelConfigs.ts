@@ -30,6 +30,31 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
         },
       },
     },
+    // OpenAI models
+    'gpt-4': {
+      extends: 'chat-base',
+      modelConfig: {
+        model: 'gpt-4',
+      },
+    },
+    'gpt-4-turbo': {
+      extends: 'chat-base',
+      modelConfig: {
+        model: 'gpt-4-turbo',
+      },
+    },
+    'gpt-4o': {
+      extends: 'chat-base',
+      modelConfig: {
+        model: 'gpt-4o',
+      },
+    },
+    'gpt-3.5-turbo': {
+      extends: 'chat-base',
+      modelConfig: {
+        model: 'gpt-3.5-turbo',
+      },
+    },
     // Because `gemini-2.5-pro` and related model configs are "user-facing"
     // today, i.e. they could be passed via `--model`, we have to be careful to
     // ensure these model configs can be used interactively.
