@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-pro';
-export const DEFAULT_GEMINI_FLASH_MODEL = 'gemini-2.5-flash';
-export const DEFAULT_GEMINI_FLASH_LITE_MODEL = 'gemini-2.5-flash-lite';
+// Default models - now using OpenAI as primary
+export const DEFAULT_GEMINI_MODEL = 'gpt-4o';
+export const DEFAULT_GEMINI_FLASH_MODEL = 'gpt-3.5-turbo';
+export const DEFAULT_GEMINI_FLASH_LITE_MODEL = 'gpt-3.5-turbo';
 
 export const DEFAULT_GEMINI_MODEL_AUTO = 'auto';
 
-export const DEFAULT_GEMINI_EMBEDDING_MODEL = 'gemini-embedding-001';
+export const DEFAULT_GEMINI_EMBEDDING_MODEL = 'text-embedding-3-small';
 
 // Cap the thinking at 8192 to prevent run-away thinking loops.
 export const DEFAULT_THINKING_MODE = 8192;

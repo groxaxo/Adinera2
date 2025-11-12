@@ -10,6 +10,8 @@ import { theme } from '../semantic-colors.js';
 import { TextInput } from '../components/shared/TextInput.js';
 import { useTextBuffer } from '../components/shared/text-buffer.js';
 import { useUIState } from '../contexts/UIStateContext.js';
+import { useSettings } from '../contexts/SettingsContext.js';
+import { AuthType } from '@google/gemini-cli-core';
 
 interface ApiAuthDialogProps {
   onSubmit: (apiKey: string) => void;
@@ -25,7 +27,11 @@ export function ApiAuthDialog({
   defaultValue = '',
 }: ApiAuthDialogProps): React.JSX.Element {
   const { mainAreaWidth } = useUIState();
+  const settings = useSettings();
   const viewportWidth = mainAreaWidth - 8;
+
+  const selectedAuthType = settings.merged.security?.auth?.selectedType;
+  const isOpenAI = selectedAuthType === AuthType.USE_OPENAI;
 
   const buffer = useTextBuffer({
     initialText: defaultValue || '',
@@ -53,18 +59,30 @@ export function ApiAuthDialog({
       width="100%"
     >
       <Text bold color={theme.text.primary}>
-        Enter Gemini API Key
+        {isOpenAI ? 'Enter OpenAI API Key' : 'Enter Gemini API Key'}
       </Text>
       <Box marginTop={1} flexDirection="column">
         <Text color={theme.text.primary}>
-          Please enter your Gemini API key. It will be securely stored in your
-          system keychain.
+          {isOpenAI
+            ? 'Please enter your OpenAI API key. You can also set OPENAI_BASE_URL environment variable to use custom endpoints.'
+            : 'Please enter your Gemini API key. It will be securely stored in your system keychain.'}
         </Text>
         <Text color={theme.text.secondary}>
-          You can get an API key from{' '}
-          <Text color={theme.text.link}>
-            https://aistudio.google.com/app/apikey
-          </Text>
+          {isOpenAI ? (
+            <>
+              You can get an API key from{' '}
+              <Text color={theme.text.link}>
+                https://platform.openai.com/api-keys
+              </Text>
+            </>
+          ) : (
+            <>
+              You can get an API key from{' '}
+              <Text color={theme.text.link}>
+                https://aistudio.google.com/app/apikey
+              </Text>
+            </>
+          )}
         </Text>
       </Box>
       <Box marginTop={1} flexDirection="row">

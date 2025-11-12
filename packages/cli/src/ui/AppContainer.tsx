@@ -456,9 +456,18 @@ Logging in with Google... Please restart Gemini CLI to continue.
           return;
         }
 
-        await saveApiKey(apiKey);
-        await reloadApiKey();
-        await config.refreshAuth(AuthType.USE_GEMINI);
+        const selectedAuthType = settings.merged.security?.auth?.selectedType;
+
+        if (selectedAuthType === AuthType.USE_OPENAI) {
+          // For OpenAI, store the key in environment variable
+          process.env['OPENAI_API_KEY'] = apiKey;
+          await config.refreshAuth(AuthType.USE_OPENAI);
+        } else {
+          // For Gemini, use the existing keychain storage
+          await saveApiKey(apiKey);
+          await reloadApiKey();
+          await config.refreshAuth(AuthType.USE_GEMINI);
+        }
         setAuthState(AuthState.Authenticated);
       } catch (e) {
         onAuthError(
@@ -466,7 +475,7 @@ Logging in with Google... Please restart Gemini CLI to continue.
         );
       }
     },
-    [setAuthState, onAuthError, reloadApiKey, config],
+    [setAuthState, onAuthError, reloadApiKey, config, settings],
   );
 
   const handleApiKeyCancel = useCallback(() => {

@@ -42,6 +42,11 @@ export function AuthDialog({
 }: AuthDialogProps): React.JSX.Element {
   let items = [
     {
+      label: 'Use OpenAI API Key (and custom endpoints)',
+      value: AuthType.USE_OPENAI,
+      key: AuthType.USE_OPENAI,
+    },
+    {
       label: 'Login with Google',
       value: AuthType.LOGIN_WITH_GOOGLE,
       key: AuthType.LOGIN_WITH_GOOGLE,
@@ -91,11 +96,15 @@ export function AuthDialog({
       return item.value === defaultAuthType;
     }
 
+    if (process.env['OPENAI_API_KEY']) {
+      return item.value === AuthType.USE_OPENAI;
+    }
+
     if (process.env['GEMINI_API_KEY']) {
       return item.value === AuthType.USE_GEMINI;
     }
 
-    return item.value === AuthType.LOGIN_WITH_GOOGLE;
+    return item.value === AuthType.USE_OPENAI;
   });
   if (settings.merged.security?.auth?.enforcedType) {
     initialAuthIndex = 0;
@@ -122,7 +131,10 @@ Logging in with Google... Please restart Gemini CLI to continue.
           process.exit(0);
         }
       }
-      if (authType === AuthType.USE_GEMINI) {
+      if (
+        authType === AuthType.USE_GEMINI ||
+        authType === AuthType.USE_OPENAI
+      ) {
         setAuthState(AuthState.AwaitingApiKeyInput);
         return;
       }
