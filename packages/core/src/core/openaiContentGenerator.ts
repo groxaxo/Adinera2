@@ -5,7 +5,6 @@
  */
 
 import type {
-  GenerateContentResponse,
   GenerateContentParameters,
   CountTokensParameters,
   CountTokensResponse,
@@ -14,6 +13,7 @@ import type {
   Content,
   Part,
 } from '@google/genai';
+import { FinishReason, GenerateContentResponse } from '@google/genai';
 import OpenAI from 'openai';
 import type { ContentGenerator } from './contentGenerator.js';
 import type { UserTierId } from '../code_assist/types.js';
@@ -41,17 +41,63 @@ export class OpenAIContentGenerator implements ContentGenerator {
 
   /**
    * Converts Gemini Content format to OpenAI messages format
+   * ContentListUnion = Content | Content[] | PartUnion | PartUnion[]
+   * PartUnion = Part | string
    */
   private convertToOpenAIMessages(
-    contents: Content[],
+    contentsUnion: unknown,
   ): ChatCompletionMessageParam[] {
     const messages: ChatCompletionMessageParam[] = [];
 
+    // Handle string or string[] directly
+    if (typeof contentsUnion === 'string') {
+      return [{ role: 'user', content: contentsUnion }];
+    }
+
+    // Normalize to Content array
+    let contents: Content[] = [];
+    if (Array.isArray(contentsUnion)) {
+      // Check if it's all strings
+      if (contentsUnion.length > 0 && typeof contentsUnion[0] === 'string') {
+        return [
+          { role: 'user', content: (contentsUnion as string[]).join('\n') },
+        ];
+      }
+      // Check if it's Part[] or Content[]
+      if (
+        contentsUnion.length > 0 &&
+        typeof contentsUnion[0] === 'object' &&
+        'role' in contentsUnion[0]
+      ) {
+        contents = contentsUnion as Content[];
+      } else {
+        // It's Part[] - wrap in a user Content
+        contents = [{ role: 'user', parts: contentsUnion as Part[] }];
+      }
+    } else if (
+      typeof contentsUnion === 'object' &&
+      contentsUnion !== null &&
+      'role' in contentsUnion
+    ) {
+      // Single Content
+      contents = [contentsUnion as Content];
+    } else if (typeof contentsUnion === 'object' && contentsUnion !== null) {
+      // Single Part - wrap in a user Content
+      contents = [{ role: 'user', parts: [contentsUnion as Part] }];
+    }
+
     for (const content of contents) {
+      if (!content.parts) continue;
+
       if (content.role === 'user') {
-        const textParts = content.parts
-          .filter((part) => 'text' in part && part.text)
-          .map((part) => (part as { text: string }).text);
+        const textParts: string[] = [];
+        for (const part of content.parts) {
+          if (typeof part === 'string') {
+            textParts.push(part);
+          } else if (typeof part === 'object' && 'text' in part && part.text) {
+            textParts.push(part.text);
+          }
+        }
 
         if (textParts.length > 0) {
           messages.push({
@@ -60,9 +106,14 @@ export class OpenAIContentGenerator implements ContentGenerator {
           });
         }
       } else if (content.role === 'model') {
-        const textParts = content.parts
-          .filter((part) => 'text' in part && part.text)
-          .map((part) => (part as { text: string }).text);
+        const textParts: string[] = [];
+        for (const part of content.parts) {
+          if (typeof part === 'string') {
+            textParts.push(part);
+          } else if (typeof part === 'object' && 'text' in part && part.text) {
+            textParts.push(part.text);
+          }
+        }
 
         if (textParts.length > 0) {
           messages.push({
@@ -85,23 +136,34 @@ export class OpenAIContentGenerator implements ContentGenerator {
     const choice = response.choices[0];
     const content = choice?.message?.content || '';
 
-    return {
-      candidates: [
-        {
-          content: {
-            role: 'model',
-            parts: [{ text: content }],
-          },
-          finishReason: choice?.finish_reason === 'stop' ? 'STOP' : 'OTHER',
-          index: 0,
+    // Map OpenAI finish reasons to Gemini FinishReason enum
+    let finishReason = FinishReason.OTHER;
+    if (choice?.finish_reason === 'stop') {
+      finishReason = FinishReason.STOP;
+    } else if (choice?.finish_reason === 'length') {
+      finishReason = FinishReason.MAX_TOKENS;
+    } else if (choice?.finish_reason === 'content_filter') {
+      finishReason = FinishReason.SAFETY;
+    }
+
+    const geminiResponse = new GenerateContentResponse();
+    geminiResponse.candidates = [
+      {
+        content: {
+          role: 'model',
+          parts: [{ text: content }],
         },
-      ],
-      usageMetadata: {
-        promptTokenCount: response.usage?.prompt_tokens || 0,
-        candidatesTokenCount: response.usage?.completion_tokens || 0,
-        totalTokenCount: response.usage?.total_tokens || 0,
+        finishReason,
+        index: 0,
       },
+    ];
+    geminiResponse.usageMetadata = {
+      promptTokenCount: response.usage?.prompt_tokens || 0,
+      candidatesTokenCount: response.usage?.completion_tokens || 0,
+      totalTokenCount: response.usage?.total_tokens || 0,
     };
+
+    return geminiResponse;
   }
 
   async generateContent(
@@ -119,15 +181,32 @@ export class OpenAIContentGenerator implements ContentGenerator {
         systemText = (request.config.systemInstruction as { text: string })
           .text;
       } else if (Array.isArray(request.config.systemInstruction)) {
-        systemText = request.config.systemInstruction
-          .filter((part: Part) => 'text' in part && part.text)
-          .map((part: Part) => (part as { text: string }).text)
-          .join('\n');
+        const textParts: string[] = [];
+        for (const part of request.config.systemInstruction) {
+          if (typeof part === 'string') {
+            textParts.push(part);
+          } else if (typeof part === 'object' && 'text' in part && part.text) {
+            textParts.push(part.text);
+          }
+        }
+        systemText = textParts.join('\n');
       } else if ('parts' in request.config.systemInstruction) {
-        systemText = (request.config.systemInstruction as Content).parts
-          .filter((part) => 'text' in part && part.text)
-          .map((part) => (part as { text: string }).text)
-          .join('\n');
+        const textParts: string[] = [];
+        const parts = (request.config.systemInstruction as Content).parts;
+        if (parts) {
+          for (const part of parts) {
+            if (typeof part === 'string') {
+              textParts.push(part);
+            } else if (
+              typeof part === 'object' &&
+              'text' in part &&
+              part.text
+            ) {
+              textParts.push(part.text);
+            }
+          }
+        }
+        systemText = textParts.join('\n');
       }
 
       if (systemText) {
@@ -149,73 +228,111 @@ export class OpenAIContentGenerator implements ContentGenerator {
     return this.convertToGeminiResponse(response);
   }
 
-  async *generateContentStream(
+  async generateContentStream(
     request: GenerateContentParameters,
     _userPromptId: string,
-  ): AsyncGenerator<GenerateContentResponse> {
-    const messages = this.convertToOpenAIMessages(request.contents);
+  ): Promise<AsyncGenerator<GenerateContentResponse>> {
+    const convertToOpenAIMessages = this.convertToOpenAIMessages.bind(this);
+    const client = this.client;
 
-    // Add system instruction if present
-    if (request.config?.systemInstruction) {
-      let systemText = '';
-      if (typeof request.config.systemInstruction === 'string') {
-        systemText = request.config.systemInstruction;
-      } else if ('text' in request.config.systemInstruction) {
-        systemText = (request.config.systemInstruction as { text: string })
-          .text;
-      } else if (Array.isArray(request.config.systemInstruction)) {
-        systemText = request.config.systemInstruction
-          .filter((part: Part) => 'text' in part && part.text)
-          .map((part: Part) => (part as { text: string }).text)
-          .join('\n');
-      } else if ('parts' in request.config.systemInstruction) {
-        systemText = (request.config.systemInstruction as Content).parts
-          .filter((part) => 'text' in part && part.text)
-          .map((part) => (part as { text: string }).text)
-          .join('\n');
+    async function* streamGenerator(): AsyncGenerator<GenerateContentResponse> {
+      const messages = convertToOpenAIMessages(request.contents);
+
+      // Add system instruction if present
+      if (request.config?.systemInstruction) {
+        let systemText = '';
+        if (typeof request.config.systemInstruction === 'string') {
+          systemText = request.config.systemInstruction;
+        } else if ('text' in request.config.systemInstruction) {
+          systemText = (request.config.systemInstruction as { text: string })
+            .text;
+        } else if (Array.isArray(request.config.systemInstruction)) {
+          const textParts: string[] = [];
+          for (const part of request.config.systemInstruction) {
+            if (typeof part === 'string') {
+              textParts.push(part);
+            } else if (
+              typeof part === 'object' &&
+              'text' in part &&
+              part.text
+            ) {
+              textParts.push(part.text);
+            }
+          }
+          systemText = textParts.join('\n');
+        } else if ('parts' in request.config.systemInstruction) {
+          const textParts: string[] = [];
+          const parts = (request.config.systemInstruction as Content).parts;
+          if (parts) {
+            for (const part of parts) {
+              if (typeof part === 'string') {
+                textParts.push(part);
+              } else if (
+                typeof part === 'object' &&
+                'text' in part &&
+                part.text
+              ) {
+                textParts.push(part.text);
+              }
+            }
+          }
+          systemText = textParts.join('\n');
+        }
+
+        if (systemText) {
+          messages.unshift({
+            role: 'system',
+            content: systemText,
+          });
+        }
       }
 
-      if (systemText) {
-        messages.unshift({
-          role: 'system',
-          content: systemText,
-        });
-      }
-    }
+      const stream = await client.chat.completions.create({
+        model: request.model,
+        messages,
+        temperature: request.config?.temperature,
+        max_tokens: request.config?.maxOutputTokens,
+        top_p: request.config?.topP,
+        stream: true,
+      });
 
-    const stream = await this.client.chat.completions.create({
-      model: request.model,
-      messages,
-      temperature: request.config?.temperature,
-      max_tokens: request.config?.maxOutputTokens,
-      top_p: request.config?.topP,
-      stream: true,
-    });
+      let accumulatedText = '';
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || '';
+        accumulatedText += delta;
 
-    let accumulatedText = '';
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content || '';
-      accumulatedText += delta;
+        // Map OpenAI finish reasons to Gemini FinishReason enum
+        let finishReason = FinishReason.OTHER;
+        if (chunk.choices[0]?.finish_reason === 'stop') {
+          finishReason = FinishReason.STOP;
+        } else if (chunk.choices[0]?.finish_reason === 'length') {
+          finishReason = FinishReason.MAX_TOKENS;
+        } else if (chunk.choices[0]?.finish_reason === 'content_filter') {
+          finishReason = FinishReason.SAFETY;
+        }
 
-      yield {
-        candidates: [
+        const geminiResponse = new GenerateContentResponse();
+        geminiResponse.candidates = [
           {
             content: {
               role: 'model',
               parts: [{ text: accumulatedText }],
             },
-            finishReason:
-              chunk.choices[0]?.finish_reason === 'stop' ? 'STOP' : 'OTHER',
+            finishReason,
             index: 0,
           },
-        ],
-        usageMetadata: {
+        ];
+        geminiResponse.usageMetadata = {
           promptTokenCount: 0,
           candidatesTokenCount: 0,
           totalTokenCount: 0,
-        },
-      };
+        };
+
+        yield geminiResponse;
+      }
     }
+
+    return streamGenerator();
   }
 
   async countTokens(
@@ -236,12 +353,9 @@ export class OpenAIContentGenerator implements ContentGenerator {
     request: EmbedContentParameters,
   ): Promise<EmbedContentResponse> {
     // OpenAI embeddings use a different model and API
-    // This is a simplified implementation
-    const textParts = request.content.parts
-      .filter((part) => 'text' in part && part.text)
-      .map((part) => (part as { text: string }).text);
-
-    const text = textParts.join('\n');
+    // Convert contents to text
+    const messages = this.convertToOpenAIMessages(request.contents);
+    const text = messages.map((m) => m.content).join('\n');
 
     const response = await this.client.embeddings.create({
       model: 'text-embedding-3-small',
@@ -249,9 +363,11 @@ export class OpenAIContentGenerator implements ContentGenerator {
     });
 
     return {
-      embedding: {
-        values: response.data[0].embedding,
-      },
+      embeddings: [
+        {
+          values: response.data[0].embedding,
+        },
+      ],
     };
   }
 }
