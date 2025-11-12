@@ -1,10 +1,10 @@
 {
   "name": "@google/gemini-cli-core",
   "version": "0.16.0-nightly.20251112.c961f274",
-  "description": "Gemini CLI Core",
+  "description": "Adinera2 Core - AI CLI Core with OpenAI support",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/google-gemini/gemini-cli.git"
+    "url": "git+https://github.com/groxaxo/Adinera2.git"
   },
   "type": "module",
   "main": "dist/index.js",

@@ -1,5 +1,5 @@
 {
-  "name": "@google/gemini-cli",
+  "name": "adinera2",
   "version": "0.16.0-nightly.20251112.c961f274",
   "engines": {
     "node": ">=20.0.0"
@@ -11,7 +11,7 @@
   "private": "true",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/google-gemini/gemini-cli.git"
+    "url": "git+https://github.com/groxaxo/Adinera2.git"
   },
   "config": {
     "sandboxImageUri": "us-docker.pkg.dev/gemini-code-dev/gemini-cli/sandbox:0.16.0-nightly.20251112.c961f274"
@@ -68,6 +68,7 @@
     }
   },
   "bin": {
+    "adinera2": "bundle/gemini.js",
     "gemini": "bundle/gemini.js"
   },
   "files": [
